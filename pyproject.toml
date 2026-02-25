@@ -1,0 +1,46 @@
+# pyproject.toml — Poetry project configuration
+# ================================================
+# Poetry is a Python dependency manager. This file declares your project's
+# metadata, dependencies, and dev-dependencies in one place.
+#
+# Quick-start:
+#   1. Install Poetry:  https://python-poetry.org/docs/#installation
+#   2. Install deps:    poetry install
+#   3. Run tests:       poetry run pytest
+#   4. Run the app:     poetry run streamlit run src/ui/recurring_defects_page.py
+
+[tool.poetry]
+name = "cs480-steelworks"
+version = "0.1.0"
+description = "SteelWorks quality-engineering dashboard — recurring defect analysis"
+authors = ["CS480 Team"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+# SQLAlchemy — ORM (Object-Relational Mapper) that lets you interact with the
+# PostgreSQL database using Python classes instead of raw SQL.
+sqlalchemy = "^2.0"
+
+# psycopg2-binary — PostgreSQL database driver that SQLAlchemy uses under the
+# hood to actually talk to the Postgres server.
+psycopg2-binary = "^2.9"
+
+# Streamlit — a Python library that turns simple scripts into interactive web
+# apps. We use it for the dashboard UI.
+streamlit = "^1.40"
+ruff = "^0.15.2"
+
+[tool.poetry.group.dev.dependencies]
+
+# pytest — the testing framework. Run tests with:  poetry run pytest
+pytest = "^8.0"
+
+[tool.pytest.ini_options]
+# Tell pytest where to find our tests
+testpaths = ["tests"]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
