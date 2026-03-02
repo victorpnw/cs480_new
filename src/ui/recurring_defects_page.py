@@ -23,8 +23,6 @@ Acceptance Criteria covered here:
     AC9 — Default sorting (handled by the service, displayed here)
 """
 
-import streamlit as st
-
 
 def render_date_range_selector():
     """Display start-date and end-date inputs and return the selected range.

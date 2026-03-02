@@ -21,18 +21,18 @@ Note:
 """
 
 import pytest
-from datetime import date
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from src.models import Base, Defect, Lot, InspectionRecord
+from src.models import Base
 from src.repositories.inspection_repository import InspectionRepository
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def session():
@@ -83,6 +83,7 @@ def repository(seeded_session):
 # Tests — get_records_by_date_range
 # ---------------------------------------------------------------------------
 
+
 class TestGetRecordsByDateRange:
     """Tests for ``InspectionRepository.get_records_by_date_range``."""
 
@@ -111,6 +112,7 @@ class TestGetRecordsByDateRange:
 # ---------------------------------------------------------------------------
 # Tests — get_records_by_defect_code
 # ---------------------------------------------------------------------------
+
 
 class TestGetRecordsByDefectCode:
     """Tests for ``InspectionRepository.get_records_by_defect_code``."""

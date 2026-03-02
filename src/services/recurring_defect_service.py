@@ -26,7 +26,7 @@ Acceptance Criteria mapping:
 """
 
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date
 
 from src.repositories.inspection_repository import InspectionRepository
 from src.schemas import (
@@ -112,15 +112,17 @@ class RecurringDefectService:
             else:
                 status = DefectStatus.NOT_RECURRING
 
-            rows.append(RecurringDefectRow(
-                defect_code=defect_code,
-                status=status,
-                num_weeks=len(distinct_weeks),
-                num_lots=len(distinct_lots),
-                first_seen=min(r.inspection_date for r in meaningful),
-                last_seen=max(r.inspection_date for r in meaningful),
-                total_qty=sum(r.qty_defects for r in meaningful),
-            ))
+            rows.append(
+                RecurringDefectRow(
+                    defect_code=defect_code,
+                    status=status,
+                    num_weeks=len(distinct_weeks),
+                    num_lots=len(distinct_lots),
+                    first_seen=min(r.inspection_date for r in meaningful),
+                    last_seen=max(r.inspection_date for r in meaningful),
+                    total_qty=sum(r.qty_defects for r in meaningful),
+                )
+            )
 
         # 5. AC9: sort — Recurring first, then by num_weeks desc, num_lots desc.
         status_order = {
@@ -154,7 +156,7 @@ class RecurringDefectService:
             A tuple of (weekly_rows, inspection_details).
         """
         # TODO: implement
-        pass
+        return ([], [])
 
     # ------------------------------------------------------------------
     # AC8 — Identify missing data periods
@@ -177,4 +179,4 @@ class RecurringDefectService:
             empty list if data is complete.
         """
         # TODO: implement
-        pass
+        return []

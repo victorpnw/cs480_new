@@ -31,11 +31,13 @@ psycopg2-binary = "^2.9"
 # apps. We use it for the dashboard UI.
 streamlit = "^1.40"
 ruff = "^0.15.2"
+pre-commit = "^4.5.1"
 
 [tool.poetry.group.dev.dependencies]
 
 # pytest — the testing framework. Run tests with:  poetry run pytest
 pytest = "^8.0"
+pip-licenses = "^5.5.1"
 
 [tool.pytest.ini_options]
 # Tell pytest where to find our tests
