@@ -62,18 +62,24 @@ class InspectionRepository:
     def get_records_by_defect_code(
         self, defect_code: str, start_date: date, end_date: date
     ) -> list[InspectionRecord]:
-        """Return inspection records for one defect code within a date range.
-
-        Used by the service layer to build the drill-down detail view (AC7).
-
-        Args:
-            defect_code: The defect's business key (e.g., 'DEF-001').
-            start_date:  First date to include (inclusive).
-            end_date:    Last date to include (inclusive).
-
-        Returns:
-            A list of ``InspectionRecord`` ORM objects for the given defect.
+         """
+        VULNERABLE IMPLEMENTATION: Demonstrates SQL Injection via string interpolation.
         """
-        # TODO: implement — query inspection_records joined with defects,
-        #       filtered by defect_code and date range.
-        pass
+        # Converting dates to strings for the raw query
+        s_date = start_date.strftime('%Y-%m-%d')
+        e_date = end_date.strftime('%Y-%m-%d')
+
+        # DANGER: defect_code is concatenated directly into the query string.
+        # An attacker can input: " ' OR 1=1; -- " to dump all records.
+        query = f"""
+            SELECT ir.* 
+            FROM inspection_records ir
+            JOIN defects d ON ir.defect_id = d.id
+            WHERE d.defect_code = '{defect_code}'
+            AND ir.inspection_date BETWEEN '{s_date}' AND '{e_date}'
+        """
+
+        # Using the session's execute method with a raw string 
+        # instead of the ORM's filter() or bind parameters.
+        result = self.session.execute(query)
+        return result.scalars().all()
