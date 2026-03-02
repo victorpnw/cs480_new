@@ -27,6 +27,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 # ---------------------------------------------------------------------------
 class Base(DeclarativeBase):
     """Base class for all ORM models.  You never instantiate this directly."""
+
     pass
 
 
@@ -113,7 +114,9 @@ class InspectionRecord(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     inspection_id: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     lot_fk: Mapped[int] = mapped_column("lot_id", ForeignKey("lots.id"), nullable=False)
-    defect_fk: Mapped[int] = mapped_column("defect_id", ForeignKey("defects.id"), nullable=False)
+    defect_fk: Mapped[int] = mapped_column(
+        "defect_id", ForeignKey("defects.id"), nullable=False
+    )
     inspection_date: Mapped[date] = mapped_column(Date, nullable=False)
     qty_defects: Mapped[int] = mapped_column(Integer, nullable=False)
     is_data_complete: Mapped[bool] = mapped_column(Boolean, default=True)

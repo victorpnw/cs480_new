@@ -31,7 +31,7 @@ import pytest
 from datetime import date
 from unittest.mock import MagicMock
 
-from src.schemas import DefectStatus, RecurringDefectRow
+from src.schemas import DefectStatus
 from src.services.recurring_defect_service import RecurringDefectService
 from src.models import InspectionRecord, Lot, Defect
 
@@ -39,6 +39,7 @@ from src.models import InspectionRecord, Lot, Defect
 # ---------------------------------------------------------------------------
 # Fixtures — reusable test setup
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
 def mock_repository():
@@ -67,6 +68,7 @@ def service(mock_repository):
 # ---------------------------------------------------------------------------
 # Helper — build test data quickly
 # ---------------------------------------------------------------------------
+
 
 def _make_record(
     defect_code: str,
@@ -116,8 +118,10 @@ class TestAC1RecurringClassification:
         start = date(2026, 1, 5)
         end = date(2026, 1, 18)
         mock_repository.get_records_by_date_range.return_value = [
-            _make_record("DEF-001", "LOT-A", date(2026, 1, 6), qty_defects=3),   # week 1
-            _make_record("DEF-001", "LOT-B", date(2026, 1, 13), qty_defects=2),  # week 2
+            _make_record("DEF-001", "LOT-A", date(2026, 1, 6), qty_defects=3),  # week 1
+            _make_record(
+                "DEF-001", "LOT-B", date(2026, 1, 13), qty_defects=2
+            ),  # week 2
         ]
 
         # Act
@@ -146,9 +150,7 @@ class TestAC2SingleLotNotRecurring:
     classified as recurring, even if it has multiple records."""
 
     @pytest.mark.skip(reason="Test not implemented yet")
-    def test_single_lot_multiple_records_not_recurring(
-        self, service, mock_repository
-    ):
+    def test_single_lot_multiple_records_not_recurring(self, service, mock_repository):
         """Given DEF-003 with 3 records all in LOT-A,
         status should be Not recurring."""
         # Arrange / Act / Assert
@@ -175,9 +177,7 @@ class TestAC4InsufficientData:
     the defect should be classified as Insufficient data."""
 
     @pytest.mark.skip(reason="Test not implemented yet")
-    def test_incomplete_data_yields_insufficient_status(
-        self, service, mock_repository
-    ):
+    def test_incomplete_data_yields_insufficient_status(self, service, mock_repository):
         """Given DEF-005 where one record has is_data_complete=False,
         status should be Insufficient data."""
         # Arrange / Act / Assert
@@ -190,9 +190,7 @@ class TestAC5SummaryListFields:
     """AC5: Each row in the summary list must include the required fields."""
 
     @pytest.mark.skip(reason="Test not implemented yet")
-    def test_summary_row_has_all_required_fields(
-        self, service, mock_repository
-    ):
+    def test_summary_row_has_all_required_fields(self, service, mock_repository):
         """The returned RecurringDefectRow should have: defect_code, status,
         num_weeks, num_lots, first_seen, last_seen, total_qty."""
         # Arrange / Act / Assert
@@ -213,9 +211,7 @@ class TestAC7DrillDownDetail:
         pass
 
     @pytest.mark.skip(reason="Test not implemented yet")
-    def test_drill_down_returns_raw_inspection_records(
-        self, service, mock_repository
-    ):
+    def test_drill_down_returns_raw_inspection_records(self, service, mock_repository):
         """The second element of the tuple should contain InspectionDetail
         objects matching the underlying records."""
         # Arrange / Act / Assert
@@ -251,9 +247,7 @@ class TestAC9DefaultSortOrder:
         pass
 
     @pytest.mark.skip(reason="Test not implemented yet")
-    def test_within_recurring_sorted_by_weeks_then_lots(
-        self, service, mock_repository
-    ):
+    def test_within_recurring_sorted_by_weeks_then_lots(self, service, mock_repository):
         """Given two Recurring defects — one with 5 weeks and one with 3 —
         the 5-week defect should come first."""
         # Arrange / Act / Assert
