@@ -339,9 +339,13 @@ class TestAC7DrillDownDetail:
         start = date(2026, 1, 5)
         end = date(2026, 1, 25)
         mock_repository.get_records_by_defect_code.return_value = [
-            _make_record("DEF-001", "LOT-A", date(2026, 1, 6), qty_defects=3),   # week 2
-            _make_record("DEF-001", "LOT-B", date(2026, 1, 13), qty_defects=2),  # week 3
-            _make_record("DEF-001", "LOT-A", date(2026, 1, 20), qty_defects=1),  # week 4
+            _make_record("DEF-001", "LOT-A", date(2026, 1, 6), qty_defects=3),  # week 2
+            _make_record(
+                "DEF-001", "LOT-B", date(2026, 1, 13), qty_defects=2
+            ),  # week 3
+            _make_record(
+                "DEF-001", "LOT-A", date(2026, 1, 20), qty_defects=1
+            ),  # week 4
         ]
 
         # Act
@@ -349,7 +353,7 @@ class TestAC7DrillDownDetail:
 
         # Assert
         assert len(weekly_rows) == 3
-        assert weekly_rows[0].week_start == date(2026, 1, 5)   # Monday of ISO week 2
+        assert weekly_rows[0].week_start == date(2026, 1, 5)  # Monday of ISO week 2
         assert weekly_rows[0].total_qty == 3
         assert weekly_rows[1].total_qty == 2
         assert weekly_rows[2].total_qty == 1
@@ -443,7 +447,7 @@ class TestAC8MissingPeriods:
         # Assert
         assert len(missing) == 1
         assert missing[0].period_start == date(2026, 1, 12)  # Monday of that week
-        assert missing[0].period_end == date(2026, 1, 18)    # Sunday
+        assert missing[0].period_end == date(2026, 1, 18)  # Sunday
         assert "Missing inspection records" in missing[0].reason
 
     def test_no_missing_periods_when_data_complete(self, service, mock_repository):

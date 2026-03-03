@@ -231,7 +231,7 @@ class RecurringDefectService:
             weeks[(iso[0], iso[1])].append(r)
 
         missing_periods = []
-        for (iso_year, iso_week) in sorted(weeks.keys()):
+        for iso_year, iso_week in sorted(weeks.keys()):
             period_start = date.fromisocalendar(iso_year, iso_week, 1)
             period_end = period_start + timedelta(days=6)
             reason = (

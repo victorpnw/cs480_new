@@ -35,9 +35,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from dotenv import load_dotenv
 import streamlit as st
 import pandas as pd
-
-load_dotenv()
-
 from src.database import get_session
 from src.repositories.inspection_repository import InspectionRepository
 from src.services.recurring_defect_service import RecurringDefectService
@@ -145,7 +142,9 @@ def render_defect_detail(defect_code, weekly_rows, inspection_details):
             }
             for wr in weekly_rows
         ]
-        st.dataframe(pd.DataFrame(weekly_data), use_container_width=True, hide_index=True)
+        st.dataframe(
+            pd.DataFrame(weekly_data), use_container_width=True, hide_index=True
+        )
     else:
         st.info("No weekly data available.")
 
@@ -193,6 +192,9 @@ def main():
         5. If a defect is selected, render the drill-down detail.
         6. If the selected defect has insufficient data, show AC8 messaging.
     """
+
+    load_dotenv()
+
     st.set_page_config(page_title="Recurring Defects", layout="wide")
     st.title("Recurring Defects Analysis")
 

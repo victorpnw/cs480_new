@@ -57,7 +57,9 @@ class InspectionRepository:
         """
         return (
             self._session.query(InspectionRecord)
-            .options(joinedload(InspectionRecord.lot), joinedload(InspectionRecord.defect))
+            .options(
+                joinedload(InspectionRecord.lot), joinedload(InspectionRecord.defect)
+            )
             .filter(
                 InspectionRecord.inspection_date >= start_date,
                 InspectionRecord.inspection_date <= end_date,
@@ -82,7 +84,9 @@ class InspectionRepository:
         """
         return (
             self._session.query(InspectionRecord)
-            .options(joinedload(InspectionRecord.lot), joinedload(InspectionRecord.defect))
+            .options(
+                joinedload(InspectionRecord.lot), joinedload(InspectionRecord.defect)
+            )
             .join(InspectionRecord.defect)
             .filter(
                 Defect.defect_code == defect_code,
