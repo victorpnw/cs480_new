@@ -26,7 +26,7 @@ Acceptance Criteria mapping:
 """
 
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 
 from src.repositories.inspection_repository import InspectionRepository
 from src.schemas import (
@@ -155,8 +155,45 @@ class RecurringDefectService:
         Returns:
             A tuple of (weekly_rows, inspection_details).
         """
-        # TODO: implement
-        return ([], [])
+        records = self._repository.get_records_by_defect_code(
+            defect_code, start_date, end_date
+        )
+
+        # Build raw inspection details (include all records, even qty=0)
+        inspection_details = [
+            InspectionDetail(
+                lot_id=r.lot.lot_id,
+                inspection_date=r.inspection_date,
+                defect_code=r.defect.defect_code,
+                qty_defects=r.qty_defects,
+            )
+            for r in records
+        ]
+
+        # Build weekly breakdown — only records with qty_defects > 0 (AC3)
+        meaningful = [r for r in records if r.qty_defects > 0]
+        weeks: dict[tuple[int, int], list] = defaultdict(list)
+        for r in meaningful:
+            iso = r.inspection_date.isocalendar()
+            weeks[(iso[0], iso[1])].append(r)
+
+        weekly_rows = []
+        for (iso_year, iso_week), week_records in sorted(weeks.items()):
+            # Compute the Monday (week_start) and Sunday (week_end) for this ISO week
+            week_start = date.fromisocalendar(iso_year, iso_week, 1)
+            week_end = week_start + timedelta(days=6)
+            lots_involved = sorted({r.lot.lot_id for r in week_records})
+            total_qty = sum(r.qty_defects for r in week_records)
+            weekly_rows.append(
+                WeeklyBreakdownRow(
+                    week_start=week_start,
+                    week_end=week_end,
+                    lots_involved=lots_involved,
+                    total_qty=total_qty,
+                )
+            )
+
+        return (weekly_rows, inspection_details)
 
     # ------------------------------------------------------------------
     # AC8 — Identify missing data periods
@@ -178,5 +215,53 @@ class RecurringDefectService:
             A list of ``MissingPeriod`` DTOs describing each gap.  Returns an
             empty list if data is complete.
         """
-        # TODO: implement
-        return []
+        records = self._repository.get_records_by_defect_code(
+            defect_code, start_date, end_date
+        )
+
+        # Find records flagged as incomplete
+        incomplete = [r for r in records if not r.is_data_complete]
+        if not incomplete:
+            return []
+
+        # Group incomplete records by ISO week to identify missing periods
+        weeks: dict[tuple[int, int], list] = defaultdict(list)
+        for r in incomplete:
+            iso = r.inspection_date.isocalendar()
+            weeks[(iso[0], iso[1])].append(r)
+
+        missing_periods = []
+        for (iso_year, iso_week) in sorted(weeks.keys()):
+            period_start = date.fromisocalendar(iso_year, iso_week, 1)
+            period_end = period_start + timedelta(days=6)
+            reason = (
+                f"Missing inspection records for week of "
+                f"{period_start.isoformat()} to {period_end.isoformat()}"
+            )
+            missing_periods.append(
+                MissingPeriod(
+                    period_start=period_start,
+                    period_end=period_end,
+                    reason=reason,
+                )
+            )
+
+        # Merge consecutive missing weeks into contiguous periods
+        if len(missing_periods) > 1:
+            merged = [missing_periods[0]]
+            for mp in missing_periods[1:]:
+                prev = merged[-1]
+                if mp.period_start <= prev.period_end + timedelta(days=1):
+                    merged[-1] = MissingPeriod(
+                        period_start=prev.period_start,
+                        period_end=mp.period_end,
+                        reason=(
+                            f"Missing inspection records for weeks of "
+                            f"{prev.period_start.isoformat()} to {mp.period_end.isoformat()}"
+                        ),
+                    )
+                else:
+                    merged.append(mp)
+            missing_periods = merged
+
+        return missing_periods

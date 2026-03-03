@@ -18,9 +18,9 @@ The service layer is responsible for converting these into DTOs.
 """
 
 from datetime import date
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from src.models import InspectionRecord
+from src.models import InspectionRecord, Defect
 
 
 class InspectionRepository:
@@ -55,9 +55,15 @@ class InspectionRepository:
             A list of ``InspectionRecord`` ORM objects with their related
             ``Lot`` and ``Defect`` eagerly loaded.
         """
-        # TODO: implement — query inspection_records filtered by date range,
-        #       eagerly load related lot and defect objects.
-        return []
+        return (
+            self._session.query(InspectionRecord)
+            .options(joinedload(InspectionRecord.lot), joinedload(InspectionRecord.defect))
+            .filter(
+                InspectionRecord.inspection_date >= start_date,
+                InspectionRecord.inspection_date <= end_date,
+            )
+            .all()
+        )
 
     def get_records_by_defect_code(
         self, defect_code: str, start_date: date, end_date: date
@@ -74,6 +80,14 @@ class InspectionRepository:
         Returns:
             A list of ``InspectionRecord`` ORM objects for the given defect.
         """
-        # TODO: implement — query inspection_records joined with defects,
-        #       filtered by defect_code and date range.
-        return []
+        return (
+            self._session.query(InspectionRecord)
+            .options(joinedload(InspectionRecord.lot), joinedload(InspectionRecord.defect))
+            .join(InspectionRecord.defect)
+            .filter(
+                Defect.defect_code == defect_code,
+                InspectionRecord.inspection_date >= start_date,
+                InspectionRecord.inspection_date <= end_date,
+            )
+            .all()
+        )

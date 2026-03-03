@@ -30,8 +30,9 @@ def get_engine(database_url: str):
     Returns:
         A SQLAlchemy ``Engine`` instance.
     """
-    # TODO: implement — create engine from database_url
-    pass
+    from sqlalchemy import create_engine
+
+    return create_engine(database_url)
 
 
 def get_session(database_url: str) -> Session:
@@ -46,5 +47,8 @@ def get_session(database_url: str) -> Session:
     Returns:
         A SQLAlchemy ``Session`` instance.
     """
-    # TODO: implement — build a sessionmaker from the engine, return a session
-    pass
+    from sqlalchemy.orm import sessionmaker
+
+    engine = get_engine(database_url)
+    SessionLocal = sessionmaker(bind=engine)
+    return SessionLocal()
