@@ -33,6 +33,7 @@ streamlit = "^1.40"
 ruff = "^0.15.2"
 pre-commit = "^4.5.1"
 python-dotenv = "^1.2.2"
+pytest-playwright = "^0.7.2"
 
 [tool.poetry.group.dev.dependencies]
 
@@ -44,6 +45,7 @@ playwright = "^1.58.0"
 [tool.pytest.ini_options]
 # Tell pytest where to find our tests
 testpaths = ["tests"]
+markers = ["e2e: end-to-end browser tests (require running database)"]
 
 [build-system]
 requires = ["poetry-core"]

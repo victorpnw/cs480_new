@@ -66,11 +66,27 @@ poetry run streamlit run src/ui/recurring_defects_page.py
 
 ### 5. Run tests
 
+**Unit tests** (no database required — uses in-memory SQLite):
+
 ```bash
-poetry run pytest
+poetry run pytest tests/unit -v
 ```
 
-Tests use an in-memory SQLite database — no PostgreSQL connection required.
+**E2E browser tests** (requires database connection in `.env`):
+
+```bash
+# One-time setup: install Playwright browsers
+poetry run playwright install chromium
+
+# Run E2E tests (headless)
+poetry run pytest tests/e2e -v
+
+# Run E2E tests with visible browser (headed mode)
+poetry run pytest tests/e2e -v --headed
+
+# Run all tests (unit + E2E)
+poetry run pytest -v
+```
 
 ## Features
 
