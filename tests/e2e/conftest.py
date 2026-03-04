@@ -18,20 +18,30 @@ Key concepts for beginners:
                              injects it for you).
 
 How E2E testing works (big picture):
-    1. conftest.py starts the Streamlit app on a random port  (this file)
-    2. Each test gets a fresh browser tab (``page``) from pytest-playwright
-    3. The test navigates to the app URL and interacts with the page
-    4. After ALL tests finish, conftest.py shuts down the Streamlit server
+    1. conftest.py seeds the test database with known data        (this file)
+    2. conftest.py starts the Streamlit app on a random port      (this file)
+    3. Each test gets a fresh browser tab (``page``) from pytest-playwright
+    4. The test navigates to the app URL and interacts with the page
+    5. After ALL tests finish, conftest.py shuts down the server and cleans up
 """
 
+import os
 import socket
 import subprocess
 import sys
 import time
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
 from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+# Add project root to path so we can import src modules
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from src.models import Base, Defect, InspectionRecord, Lot
 
 
 def _find_free_port() -> int:
@@ -78,8 +88,146 @@ def _wait_for_server(port: int, timeout: float = 30.0) -> None:
     )
 
 
+def _build_seed_data():
+    """Build the seed data objects for E2E tests.
+
+    Returns known data so workflow tests can assert against exact values.
+
+    Seed data design:
+        E2E-REC-001 (Recurring):
+            3 distinct weeks, 2 distinct lots → RECURRING
+        E2E-NOTREC-001 (Not Recurring):
+            2 distinct weeks, 1 lot → NOT RECURRING
+
+    Returns:
+        A tuple of (defects, lots, records) lists ready to add to a session.
+    """
+    today = date.today()
+    # Pick Mondays in the recent past (within the default 90-day window)
+    week1_monday = today - timedelta(days=today.weekday() + 7 * 6)  # ~6 weeks ago
+    week2_monday = today - timedelta(days=today.weekday() + 7 * 4)  # ~4 weeks ago
+    week3_monday = today - timedelta(days=today.weekday() + 7 * 2)  # ~2 weeks ago
+
+    # --- Defects ---
+    defect_rec = Defect(defect_code="E2E-REC-001")
+    defect_notrec = Defect(defect_code="E2E-NOTREC-001")
+
+    # --- Lots ---
+    lot_a = Lot(lot_id="E2E-LOT-A")
+    lot_b = Lot(lot_id="E2E-LOT-B")
+    lot_c = Lot(lot_id="E2E-LOT-C")
+
+    # --- Inspection Records ---
+    # Recurring defect: 3 weeks × 2 lots
+    records = [
+        InspectionRecord(
+            inspection_id="E2E-INS-001",
+            lot=lot_a,
+            defect=defect_rec,
+            inspection_date=week1_monday,
+            qty_defects=5,
+            is_data_complete=True,
+        ),
+        InspectionRecord(
+            inspection_id="E2E-INS-002",
+            lot=lot_b,
+            defect=defect_rec,
+            inspection_date=week1_monday + timedelta(days=1),
+            qty_defects=3,
+            is_data_complete=True,
+        ),
+        InspectionRecord(
+            inspection_id="E2E-INS-003",
+            lot=lot_a,
+            defect=defect_rec,
+            inspection_date=week2_monday,
+            qty_defects=2,
+            is_data_complete=True,
+        ),
+        InspectionRecord(
+            inspection_id="E2E-INS-004",
+            lot=lot_b,
+            defect=defect_rec,
+            inspection_date=week3_monday,
+            qty_defects=4,
+            is_data_complete=True,
+        ),
+        # Not-recurring defect: 2 weeks × 1 lot
+        InspectionRecord(
+            inspection_id="E2E-INS-005",
+            lot=lot_c,
+            defect=defect_notrec,
+            inspection_date=week1_monday + timedelta(days=2),
+            qty_defects=1,
+            is_data_complete=True,
+        ),
+        InspectionRecord(
+            inspection_id="E2E-INS-006",
+            lot=lot_c,
+            defect=defect_notrec,
+            inspection_date=week2_monday + timedelta(days=1),
+            qty_defects=2,
+            is_data_complete=True,
+        ),
+    ]
+
+    return [defect_rec, defect_notrec], [lot_a, lot_b, lot_c], records
+
+
 @pytest.fixture(scope="session")
-def streamlit_app():
+def _test_database_url():
+    """Load and return DATABASE_URL_TEST, skipping if not set.
+
+    This is the connection string for the dedicated E2E test database.
+    It is separate from the production/dev DATABASE_URL to avoid
+    polluting real data.
+    """
+    load_dotenv()
+    url = os.environ.get("DATABASE_URL_TEST")
+    if not url:
+        pytest.skip("DATABASE_URL_TEST not set — skipping E2E tests")
+    return url
+
+
+@pytest.fixture(scope="session", autouse=True)
+def seed_test_database(_test_database_url):
+    """Create tables and insert seed data into the test database.
+
+    This runs once before all E2E tests (session-scoped) and cleans up
+    after all tests are done.  The ``autouse=True`` means every E2E test
+    automatically gets the seeded database without requesting this
+    fixture explicitly.
+
+    Lifecycle:
+        1. Create all tables (if they don't exist)
+        2. Insert seed defects, lots, and inspection records
+        3. Yield (tests run against this data)
+        4. Delete seed data and close the session
+    """
+    engine = create_engine(_test_database_url)
+    Base.metadata.create_all(engine)
+
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    defects, lots, records = _build_seed_data()
+    try:
+        session.add_all(defects + lots + records)
+        session.commit()
+        yield
+    finally:
+        # Clean up: delete seed data (order matters due to foreign keys)
+        for r in records:
+            session.delete(r)
+        for obj in lots + defects:
+            session.delete(obj)
+        session.commit()
+        session.close()
+        engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def streamlit_app(_test_database_url):
     """Start a Streamlit server and yield its base URL.
 
     This is a **session-scoped** fixture, meaning it runs once before all
@@ -87,28 +235,30 @@ def streamlit_app():
     requests ``streamlit_app`` gets the same URL pointing to the same
     running server.
 
+    The subprocess receives ``DATABASE_URL`` set to the test database URL
+    so the Streamlit app connects to the isolated test DB, not the
+    production/dev database.
+
     Lifecycle:
-        1. Load .env so the subprocess inherits DATABASE_URL
-        2. Pick a random free port
-        3. Launch ``streamlit run`` as a background subprocess
-        4. Wait for the server to accept connections
-        5. Yield the URL (e.g. "http://localhost:54321") to the tests
-        6. After all tests finish, terminate the subprocess (cleanup)
+        1. Pick a random free port
+        2. Launch ``streamlit run`` with DATABASE_URL pointing to test DB
+        3. Wait for the server to accept connections
+        4. Yield the URL (e.g. "http://localhost:54321") to the tests
+        5. After all tests finish, terminate the subprocess (cleanup)
 
     Yields:
         The base URL string, e.g. ``http://localhost:12345``.
     """
-    # Load .env so DATABASE_URL is available to the subprocess.
-    # load_dotenv() reads the .env file and sets the values as environment
-    # variables.  The subprocess inherits our environment, so it will see
-    # DATABASE_URL automatically.
-    load_dotenv()
-
     port = _find_free_port()
     project_root = (
         Path(__file__).resolve().parents[2]
     )  # tests/e2e/ → tests/ → project root
     app_path = project_root / "src" / "ui" / "recurring_defects_page.py"
+
+    # Build the subprocess environment: inherit current env but override
+    # DATABASE_URL to point at the test database.
+    env = os.environ.copy()
+    env["DATABASE_URL"] = _test_database_url
 
     # Launch Streamlit as a child process.
     #
@@ -134,6 +284,7 @@ def streamlit_app():
             "false",
         ],
         cwd=str(project_root),  # Run from the project root so imports work
+        env=env,  # Use test database, not production
         stdout=subprocess.PIPE,  # Capture stdout (prevents it from cluttering test output)
         stderr=subprocess.PIPE,  # Capture stderr
     )

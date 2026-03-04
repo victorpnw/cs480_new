@@ -72,6 +72,12 @@ poetry run streamlit run src/ui/recurring_defects_page.py
 poetry run pytest tests/unit -v
 ```
 
+**Integration tests** (requires `DATABASE_URL` in `.env`; exercises repository + service with real PostgreSQL):
+
+```bash
+poetry run pytest tests/integration -v
+```
+
 **E2E browser tests** (requires database connection in `.env`):
 
 ```bash
@@ -84,7 +90,7 @@ poetry run pytest tests/e2e -v
 # Run E2E tests with visible browser (headed mode)
 poetry run pytest tests/e2e -v --headed
 
-# Run all tests (unit + E2E)
+# Run all tests (unit + integration + E2E)
 poetry run pytest -v
 ```
 
