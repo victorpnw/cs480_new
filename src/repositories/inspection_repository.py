@@ -18,9 +18,13 @@ The service layer is responsible for converting these into DTOs.
 """
 
 from datetime import date
+import logging
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
 
 from src.models import InspectionRecord, Defect
+
+LOGGER = logging.getLogger(__name__)
 
 
 class InspectionRepository:
@@ -55,17 +59,57 @@ class InspectionRepository:
             A list of ``InspectionRecord`` ORM objects with their related
             ``Lot`` and ``Defect`` eagerly loaded.
         """
-        return (
-            self._session.query(InspectionRecord)
-            .options(
-                joinedload(InspectionRecord.lot), joinedload(InspectionRecord.defect)
-            )
-            .filter(
-                InspectionRecord.inspection_date >= start_date,
-                InspectionRecord.inspection_date <= end_date,
-            )
-            .all()
+        LOGGER.info(
+            "Running inspection query by date range. start_date=%s end_date=%s",
+            start_date,
+            end_date,
         )
+        try:
+            records = (
+                self._session.query(InspectionRecord)
+                .options(
+                    joinedload(InspectionRecord.lot),
+                    joinedload(InspectionRecord.defect),
+                )
+                .filter(
+                    InspectionRecord.inspection_date >= start_date,
+                    InspectionRecord.inspection_date <= end_date,
+                )
+                .all()
+            )
+        except SQLAlchemyError:
+            LOGGER.exception(
+                "Database query failure while loading inspections by date range. "
+                "start_date=%s end_date=%s",
+                start_date,
+                end_date,
+            )
+            raise
+        except Exception:
+            LOGGER.exception(
+                "Unexpected exception in date-range inspection query. "
+                "start_date=%s end_date=%s",
+                start_date,
+                end_date,
+            )
+            raise
+
+        LOGGER.info(
+            "Inspection query complete. number_of_inspections=%s start_date=%s "
+            "end_date=%s",
+            len(records),
+            start_date,
+            end_date,
+        )
+        if len(records) > 10_000:
+            LOGGER.warning(
+                "Very large query result returned by date-range inspection query. "
+                "number_of_inspections=%s start_date=%s end_date=%s",
+                len(records),
+                start_date,
+                end_date,
+            )
+        return records
 
     def get_records_by_defect_code(
         self, defect_code: str, start_date: date, end_date: date
@@ -82,16 +126,62 @@ class InspectionRepository:
         Returns:
             A list of ``InspectionRecord`` ORM objects for the given defect.
         """
-        return (
-            self._session.query(InspectionRecord)
-            .options(
-                joinedload(InspectionRecord.lot), joinedload(InspectionRecord.defect)
-            )
-            .join(InspectionRecord.defect)
-            .filter(
-                Defect.defect_code == defect_code,
-                InspectionRecord.inspection_date >= start_date,
-                InspectionRecord.inspection_date <= end_date,
-            )
-            .all()
+        LOGGER.info(
+            "Running inspection query by defect code. defect_type=%s start_date=%s "
+            "end_date=%s",
+            defect_code,
+            start_date,
+            end_date,
         )
+        try:
+            records = (
+                self._session.query(InspectionRecord)
+                .options(
+                    joinedload(InspectionRecord.lot),
+                    joinedload(InspectionRecord.defect),
+                )
+                .join(InspectionRecord.defect)
+                .filter(
+                    Defect.defect_code == defect_code,
+                    InspectionRecord.inspection_date >= start_date,
+                    InspectionRecord.inspection_date <= end_date,
+                )
+                .all()
+            )
+        except SQLAlchemyError:
+            LOGGER.exception(
+                "Database query failure while loading defect inspections. "
+                "defect_type=%s start_date=%s end_date=%s",
+                defect_code,
+                start_date,
+                end_date,
+            )
+            raise
+        except Exception:
+            LOGGER.exception(
+                "Unexpected exception in defect inspection query. defect_type=%s "
+                "start_date=%s end_date=%s",
+                defect_code,
+                start_date,
+                end_date,
+            )
+            raise
+
+        LOGGER.info(
+            "Defect inspection query complete. defect_type=%s number_of_inspections=%s "
+            "start_date=%s end_date=%s",
+            defect_code,
+            len(records),
+            start_date,
+            end_date,
+        )
+        if len(records) > 10_000:
+            LOGGER.warning(
+                "Very large query result returned by defect inspection query. "
+                "defect_type=%s number_of_inspections=%s start_date=%s end_date=%s",
+                defect_code,
+                len(records),
+                start_date,
+                end_date,
+            )
+        return records

@@ -18,8 +18,11 @@ See also:
 """
 
 from datetime import date, datetime
-from sqlalchemy import String, Integer, Boolean, Date, ForeignKey
+import logging
+from sqlalchemy import String, Integer, Boolean, Date, ForeignKey, event
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+LOGGER = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -124,3 +127,33 @@ class InspectionRecord(Base):
     # Relationships (back-references to parent tables)
     lot: Mapped["Lot"] = relationship(back_populates="inspection_records")
     defect: Mapped["Defect"] = relationship(back_populates="inspection_records")
+
+
+@event.listens_for(InspectionRecord, "after_insert")
+def _log_inspection_record_created(mapper, connection, target):
+    """Log creation of inspection records for operational tracing."""
+    lot_obj = target.__dict__.get("lot")
+    defect_obj = target.__dict__.get("defect")
+    LOGGER.info(
+        "Inspection record created. inspection_id=%s lot_id=%s defect_type=%s "
+        "number_of_defects_detected=%s",
+        target.inspection_id,
+        lot_obj.lot_id if lot_obj else None,
+        defect_obj.defect_code if defect_obj else None,
+        target.qty_defects,
+    )
+
+
+@event.listens_for(InspectionRecord, "after_update")
+def _log_inspection_record_updated(mapper, connection, target):
+    """Log updates to inspection records for operational tracing."""
+    lot_obj = target.__dict__.get("lot")
+    defect_obj = target.__dict__.get("defect")
+    LOGGER.info(
+        "Inspection record updated. inspection_id=%s lot_id=%s defect_type=%s "
+        "number_of_defects_detected=%s",
+        target.inspection_id,
+        lot_obj.lot_id if lot_obj else None,
+        defect_obj.defect_code if defect_obj else None,
+        target.qty_defects,
+    )

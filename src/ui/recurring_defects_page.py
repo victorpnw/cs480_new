@@ -25,7 +25,9 @@ Acceptance Criteria covered here:
 
 import os
 import sys
+import logging
 from datetime import date, timedelta
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 # Add the project root to sys.path so "src" is importable when Streamlit
@@ -39,6 +41,41 @@ from src.database import get_session
 from src.repositories.inspection_repository import InspectionRepository
 from src.services.recurring_defect_service import RecurringDefectService
 from src.schemas import DefectStatus
+
+LOG_FILE_PATH = Path(__file__).resolve().parents[2] / "logs" / "application.log"
+LOG_MAX_BYTES = 5 * 1024 * 1024
+LOG_BACKUP_COUNT = 3
+
+LOGGER = logging.getLogger(__name__)
+
+
+def configure_logging() -> bool:
+    """Configure root logging with a rotating file handler once per process."""
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    target_log_path = LOG_FILE_PATH.resolve()
+    has_existing_handler = any(
+        isinstance(handler, RotatingFileHandler)
+        and Path(handler.baseFilename).resolve() == target_log_path
+        for handler in root_logger.handlers
+    )
+    if has_existing_handler:
+        return False
+
+    file_handler = RotatingFileHandler(
+        filename=target_log_path,
+        maxBytes=LOG_MAX_BYTES,
+        backupCount=LOG_BACKUP_COUNT,
+        encoding="utf-8",
+    )
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s | %(levelname)s | %(module)s | %(message)s")
+    )
+    root_logger.addHandler(file_handler)
+    return True
 
 
 def render_date_range_selector():
@@ -193,6 +230,12 @@ def main():
         6. If the selected defect has insufficient data, show AC8 messaging.
     """
 
+    is_first_logging_setup = configure_logging()
+    if is_first_logging_setup:
+        LOGGER.info("Application startup complete.")
+
+    LOGGER.info("User opened Recurring Defects page.")
+
     load_dotenv()
 
     st.set_page_config(page_title="Recurring Defects", layout="wide")
@@ -202,12 +245,18 @@ def main():
     start_date, end_date = render_date_range_selector()
 
     if start_date > end_date:
+        LOGGER.warning(
+            "Invalid date range submitted by user. start_date=%s end_date=%s",
+            start_date,
+            end_date,
+        )
         st.error("Start date must be before or equal to end date.")
         return
 
     # 2. Get a database session and build the service
     database_url = os.environ.get("DATABASE_URL")
     if not database_url:
+        LOGGER.error("DATABASE_URL is missing. Application cannot create a session.")
         st.error("DATABASE_URL not set. Add it to your .env file.")
         return
     session = get_session(database_url)
@@ -215,20 +264,43 @@ def main():
     service = RecurringDefectService(repo)
 
     # 3. Get the summary list
+    LOGGER.info(
+        "Running recurring defect analysis. start_date=%s end_date=%s",
+        start_date,
+        end_date,
+    )
     rows = service.get_recurring_defect_list(start_date, end_date)
+    recurring_detected = sum(1 for row in rows if row.status == DefectStatus.RECURRING)
+    LOGGER.info(
+        "Recurring defect analysis finished. number_of_defects_detected=%s "
+        "number_of_summary_rows=%s",
+        recurring_detected,
+        len(rows),
+    )
 
     # 4. Filter toggle (AC6)
     show_recurring_only = render_recurring_filter()
     if show_recurring_only:
         rows = [r for r in rows if r.status == DefectStatus.RECURRING]
+        LOGGER.info(
+            "Recurring-only filter applied. number_of_summary_rows=%s", len(rows)
+        )
 
     # 5. Summary table
     selected_defect = render_defect_summary_table(rows)
 
     # 6. Drill-down detail (AC7)
     if selected_defect:
+        LOGGER.info("Loading defect drill-down. defect_type=%s", selected_defect)
         weekly_rows, inspection_details = service.get_defect_detail(
             selected_defect, start_date, end_date
+        )
+        LOGGER.info(
+            "Defect drill-down loaded. defect_type=%s number_of_inspections=%s "
+            "number_of_defects_detected=%s",
+            selected_defect,
+            len(inspection_details),
+            sum(detail.qty_defects for detail in inspection_details),
         )
         render_defect_detail(selected_defect, weekly_rows, inspection_details)
 
