@@ -36,7 +36,7 @@ repos:
     #
     # Similar idea to version pinning in requirements.txt.
     #
-    rev: v0.15.4
+    rev: v0.15.5
 
     # "hooks" selects which hook definitions from that
     # repository we want to use.

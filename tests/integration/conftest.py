@@ -23,7 +23,7 @@ from src.services.recurring_defect_service import RecurringDefectService
 
 
 @pytest.fixture(scope="session")
-def database_url() -> str:
+def database_url() -> str | None:
     """Resolve the database URL once per test session.
 
     Steps:
