@@ -23,6 +23,60 @@ Acceptance Criteria covered here:
     AC9 — Default sorting (handled by the service, displayed here)
 """
 
+import os
+import sys
+import logging
+from datetime import date, timedelta
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
+# Add the project root to sys.path so "src" is importable when Streamlit
+# runs this file directly (e.g., `streamlit run src/ui/recurring_defects_page.py`).
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from dotenv import load_dotenv
+import streamlit as st
+import pandas as pd
+from src.database import get_session
+from src.repositories.inspection_repository import InspectionRepository
+from src.services.recurring_defect_service import RecurringDefectService
+from src.schemas import DefectStatus
+
+LOG_FILE_PATH = Path(__file__).resolve().parents[2] / "logs" / "application.log"
+LOG_MAX_BYTES = 5 * 1024 * 1024
+LOG_BACKUP_COUNT = 3
+
+LOGGER = logging.getLogger(__name__)
+
+
+def configure_logging() -> bool:
+    """Configure root logging with a rotating file handler once per process."""
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    target_log_path = LOG_FILE_PATH.resolve()
+    has_existing_handler = any(
+        isinstance(handler, RotatingFileHandler)
+        and Path(handler.baseFilename).resolve() == target_log_path
+        for handler in root_logger.handlers
+    )
+    if has_existing_handler:
+        return False
+
+    file_handler = RotatingFileHandler(
+        filename=target_log_path,
+        maxBytes=LOG_MAX_BYTES,
+        backupCount=LOG_BACKUP_COUNT,
+        encoding="utf-8",
+    )
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s | %(levelname)s | %(module)s | %(message)s")
+    )
+    root_logger.addHandler(file_handler)
+    return True
+
 
 def render_date_range_selector():
     """Display start-date and end-date inputs and return the selected range.
@@ -32,8 +86,18 @@ def render_date_range_selector():
     Returns:
         A tuple of (start_date, end_date) as ``datetime.date`` objects.
     """
-    # TODO: implement — use st.date_input for start and end dates
-    pass
+    col1, col2 = st.columns(2)
+    with col1:
+        start_date = st.date_input(
+            "Start date",
+            value=date.today() - timedelta(days=90),
+        )
+    with col2:
+        end_date = st.date_input(
+            "End date",
+            value=date.today(),
+        )
+    return start_date, end_date
 
 
 def render_recurring_filter():
@@ -42,8 +106,7 @@ def render_recurring_filter():
     Returns:
         ``True`` if the user wants to see only Recurring defects.
     """
-    # TODO: implement — use st.checkbox or st.toggle
-    pass
+    return st.checkbox("Show only Recurring defects", value=False)
 
 
 def render_defect_summary_table(rows):
@@ -59,8 +122,35 @@ def render_defect_summary_table(rows):
         The selected defect_code (str) if the user clicks a row for
         drill-down, or ``None``.
     """
-    # TODO: implement — use st.dataframe or st.table, highlight Recurring rows
-    pass
+    if not rows:
+        st.info("No defects found for the selected date range.")
+        return None
+
+    data = []
+    for row in rows:
+        status_display = row.status.value
+        if row.status == DefectStatus.RECURRING:
+            status_display = "🔴 Recurring"
+        data.append(
+            {
+                "Defect Code": row.defect_code,
+                "Status": status_display,
+                "# Weeks": row.num_weeks,
+                "# Lots": row.num_lots,
+                "First Seen": row.first_seen,
+                "Last Seen": row.last_seen,
+                "Total Qty Defects": row.total_qty,
+            }
+        )
+
+    df = pd.DataFrame(data)
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+    defect_codes = [row.defect_code for row in rows]
+    selected = st.selectbox(
+        "Select a defect code to drill down", options=[""] + defect_codes
+    )
+    return selected if selected else None
 
 
 def render_defect_detail(defect_code, weekly_rows, inspection_details):
@@ -75,8 +165,43 @@ def render_defect_detail(defect_code, weekly_rows, inspection_details):
         weekly_rows:         List of ``WeeklyBreakdownRow`` DTOs.
         inspection_details:  List of ``InspectionDetail`` DTOs.
     """
-    # TODO: implement — use st.subheader, st.dataframe, st.expander, etc.
-    pass
+    st.subheader(f"Detail View: {defect_code}")
+
+    # Weekly breakdown table
+    st.markdown("**Weekly Breakdown**")
+    if weekly_rows:
+        weekly_data = [
+            {
+                "Week Start": wr.week_start,
+                "Week End": wr.week_end,
+                "Lots Involved": ", ".join(wr.lots_involved),
+                "Total Qty Defects": wr.total_qty,
+            }
+            for wr in weekly_rows
+        ]
+        st.dataframe(
+            pd.DataFrame(weekly_data), use_container_width=True, hide_index=True
+        )
+    else:
+        st.info("No weekly data available.")
+
+    # Raw inspection records
+    with st.expander("Underlying Inspection Records"):
+        if inspection_details:
+            detail_data = [
+                {
+                    "Lot ID": d.lot_id,
+                    "Inspection Date": d.inspection_date,
+                    "Defect Code": d.defect_code,
+                    "Qty Defects": d.qty_defects,
+                }
+                for d in inspection_details
+            ]
+            st.dataframe(
+                pd.DataFrame(detail_data), use_container_width=True, hide_index=True
+            )
+        else:
+            st.info("No inspection records found.")
 
 
 def render_insufficient_data_message(missing_periods):
@@ -87,8 +212,10 @@ def render_insufficient_data_message(missing_periods):
     Args:
         missing_periods: List of ``MissingPeriod`` DTOs.
     """
-    # TODO: implement — use st.warning or st.info to show each missing period
-    pass
+    if not missing_periods:
+        return
+    for mp in missing_periods:
+        st.warning(mp.reason)
 
 
 def main():
@@ -102,8 +229,90 @@ def main():
         5. If a defect is selected, render the drill-down detail.
         6. If the selected defect has insufficient data, show AC8 messaging.
     """
-    # TODO: implement — wire together the functions above with the service
-    pass
+
+    is_first_logging_setup = configure_logging()
+    if is_first_logging_setup:
+        LOGGER.info("Application startup complete.")
+
+    LOGGER.info("User opened Recurring Defects page.")
+
+    load_dotenv()
+
+    st.set_page_config(page_title="Recurring Defects", layout="wide")
+    st.title("Recurring Defects Analysis")
+
+    # 1. Date range selector
+    start_date, end_date = render_date_range_selector()
+
+    if start_date > end_date:
+        LOGGER.warning(
+            "Invalid date range submitted by user. start_date=%s end_date=%s",
+            start_date,
+            end_date,
+        )
+        st.error("Start date must be before or equal to end date.")
+        return
+
+    # 2. Get a database session and build the service
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        LOGGER.error("DATABASE_URL is missing. Application cannot create a session.")
+        st.error("DATABASE_URL not set. Add it to your .env file.")
+        return
+    session = get_session(database_url)
+    repo = InspectionRepository(session)
+    service = RecurringDefectService(repo)
+
+    # 3. Get the summary list
+    LOGGER.info(
+        "Running recurring defect analysis. start_date=%s end_date=%s",
+        start_date,
+        end_date,
+    )
+    rows = service.get_recurring_defect_list(start_date, end_date)
+    recurring_detected = sum(1 for row in rows if row.status == DefectStatus.RECURRING)
+    LOGGER.info(
+        "Recurring defect analysis finished. number_of_defects_detected=%s "
+        "number_of_summary_rows=%s",
+        recurring_detected,
+        len(rows),
+    )
+
+    # 4. Filter toggle (AC6)
+    show_recurring_only = render_recurring_filter()
+    if show_recurring_only:
+        rows = [r for r in rows if r.status == DefectStatus.RECURRING]
+        LOGGER.info(
+            "Recurring-only filter applied. number_of_summary_rows=%s", len(rows)
+        )
+
+    # 5. Summary table
+    selected_defect = render_defect_summary_table(rows)
+
+    # 6. Drill-down detail (AC7)
+    if selected_defect:
+        LOGGER.info("Loading defect drill-down. defect_type=%s", selected_defect)
+        weekly_rows, inspection_details = service.get_defect_detail(
+            selected_defect, start_date, end_date
+        )
+        LOGGER.info(
+            "Defect drill-down loaded. defect_type=%s number_of_inspections=%s "
+            "number_of_defects_detected=%s",
+            selected_defect,
+            len(inspection_details),
+            sum(detail.qty_defects for detail in inspection_details),
+        )
+        render_defect_detail(selected_defect, weekly_rows, inspection_details)
+
+        # 7. Insufficient data messaging (AC8)
+        matching_rows = [r for r in rows if r.defect_code == selected_defect]
+        if matching_rows and matching_rows[0].status == DefectStatus.INSUFFICIENT_DATA:
+            missing_periods = service.get_missing_periods(
+                selected_defect, start_date, end_date
+            )
+            render_insufficient_data_message(missing_periods)
+
+    session.close()
 
 
 # Streamlit convention: this block runs when you execute the file directly.

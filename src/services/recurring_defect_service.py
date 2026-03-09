@@ -1,182 +1,299 @@
 """
-recurring_defect_service.py — Business logic for recurring defect analysis.
+recurring_defect_service.py - Business logic for recurring defect analysis.
 
-This is the "brain" of the feature.  It takes raw inspection records from the
-repository, applies the acceptance-criteria rules (AC1–AC4), and returns
-structured DTOs that the UI can display directly.
-
-Key concepts for beginners:
-    Service layer:  Sits between the UI and the repository.  It contains the
-                    *rules* ("is this defect recurring?") but does NOT know
-                    how to render HTML or run SQL — those jobs belong to the
-                    UI layer and repository layer respectively.
-    Dependency Injection:  Instead of creating its own repository, this class
-                           *receives* one through its constructor.  This makes
-                           testing easy — in tests you can pass a fake repo.
-
-Acceptance Criteria mapping:
-    AC1 → ``classify_defects``  (recurring = >1 week AND >1 lot)
-    AC2 → ``classify_defects``  (single-lot → not recurring)
-    AC3 → ``classify_defects``  (skip records with qty_defects == 0)
-    AC4 → ``classify_defects``  (incomplete data → insufficient data)
-    AC5 → ``get_recurring_defect_list``  (builds the summary table rows)
-    AC7 → ``get_defect_detail``  (weekly breakdown + raw records)
-    AC8 → ``get_missing_periods``  (identifies data gaps)
-    AC9 → ``get_recurring_defect_list``  (default sort order)
+This is the service layer for recurring-defect calculations. It takes raw
+inspection records from the repository, applies classification rules, and
+returns DTOs for the UI layer.
 """
 
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
+import logging
 
 from src.repositories.inspection_repository import InspectionRepository
 from src.schemas import (
     DefectStatus,
-    RecurringDefectRow,
-    WeeklyBreakdownRow,
     InspectionDetail,
     MissingPeriod,
+    RecurringDefectRow,
+    WeeklyBreakdownRow,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 class RecurringDefectService:
-    """Analyses inspection data to classify defects as recurring or not.
-
-    Usage::
-
-        service = RecurringDefectService(repo)
-        rows = service.get_recurring_defect_list(start, end)
-
-    Args:
-        repository: An ``InspectionRepository`` instance for data access.
-    """
+    """Analyses inspection data to classify defects as recurring or not."""
 
     def __init__(self, repository: InspectionRepository):
         self._repository = repository
 
-    # ------------------------------------------------------------------
-    # AC1–AC4, AC5, AC9 — Summary list
-    # ------------------------------------------------------------------
     def get_recurring_defect_list(
         self, start_date: date, end_date: date
     ) -> list[RecurringDefectRow]:
-        """Build the Recurring Defects summary table (AC5) with default sort (AC9).
-
-        Steps (to be implemented):
-            1. Fetch all inspection records in the date range from the repo.
-            2. Group records by defect_code.
-            3. For each defect_code, apply classification rules:
-               - Exclude records where qty_defects == 0 (AC3).
-               - If any record has is_data_complete == False → INSUFFICIENT_DATA (AC4).
-               - If distinct calendar weeks > 1 AND distinct lots > 1 → RECURRING (AC1).
-               - Otherwise → NOT_RECURRING (AC2).
-            4. Compute aggregate fields: num_weeks, num_lots, first_seen,
-               last_seen, total_qty.
-            5. Sort: Recurring first, then by num_weeks desc, then num_lots
-               desc (AC9).
-
-        Args:
-            start_date: Start of the user-selected date range (inclusive).
-            end_date:   End of the user-selected date range (inclusive).
-
-        Returns:
-            A list of ``RecurringDefectRow`` DTOs, one per defect_code, sorted
-            per AC9.
-        """
-        # 1. Fetch all inspection records in the date range.
-        records = self._repository.get_records_by_date_range(start_date, end_date)
-
-        # 2. Group records by defect_code.
-        groups = defaultdict(list)
-        for record in records:
-            groups[record.defect.defect_code].append(record)
-
-        # 3–4. Classify each defect and compute aggregates.
-        rows: list[RecurringDefectRow] = []
-        for defect_code, group in groups.items():
-            # AC4: if any record has incomplete data → INSUFFICIENT_DATA
-            has_incomplete = any(not r.is_data_complete for r in group)
-
-            # AC3: exclude records with qty_defects == 0 for classification
-            meaningful = [r for r in group if r.qty_defects > 0]
-
-            if not meaningful:
-                continue
-
-            distinct_weeks = {r.inspection_date.isocalendar()[:2] for r in meaningful}
-            distinct_lots = {r.lot.lot_id for r in meaningful}
-
-            if has_incomplete:
-                status = DefectStatus.INSUFFICIENT_DATA
-            elif len(distinct_weeks) > 1 and len(distinct_lots) > 1:
-                status = DefectStatus.RECURRING
-            else:
-                status = DefectStatus.NOT_RECURRING
-
-            rows.append(
-                RecurringDefectRow(
-                    defect_code=defect_code,
-                    status=status,
-                    num_weeks=len(distinct_weeks),
-                    num_lots=len(distinct_lots),
-                    first_seen=min(r.inspection_date for r in meaningful),
-                    last_seen=max(r.inspection_date for r in meaningful),
-                    total_qty=sum(r.qty_defects for r in meaningful),
-                )
+        """Build the recurring-defects summary list."""
+        LOGGER.info(
+            "Recurring defect analysis started. start_date=%s end_date=%s",
+            start_date,
+            end_date,
+        )
+        try:
+            records = self._repository.get_records_by_date_range(start_date, end_date)
+            LOGGER.info(
+                "Inspection records loaded for analysis. number_of_inspections=%s",
+                len(records),
             )
 
-        # 5. AC9: sort — Recurring first, then by num_weeks desc, num_lots desc.
-        status_order = {
-            DefectStatus.RECURRING: 0,
-            DefectStatus.NOT_RECURRING: 1,
-            DefectStatus.INSUFFICIENT_DATA: 2,
-        }
-        rows.sort(key=lambda r: (status_order[r.status], -r.num_weeks, -r.num_lots))
+            groups: dict[str, list] = defaultdict(list)
+            for record in records:
+                groups[record.defect.defect_code].append(record)
 
-        return rows
+            rows: list[RecurringDefectRow] = []
+            for defect_code, group in groups.items():
+                has_incomplete = any(not r.is_data_complete for r in group)
+                meaningful = [r for r in group if r.qty_defects > 0]
+                if not meaningful:
+                    continue
 
-    # ------------------------------------------------------------------
-    # AC7 — Drill-down: weekly breakdown
-    # ------------------------------------------------------------------
+                distinct_weeks = {
+                    r.inspection_date.isocalendar()[:2] for r in meaningful
+                }
+                distinct_lots = {r.lot.lot_id for r in meaningful}
+                number_of_defects_detected = sum(r.qty_defects for r in meaningful)
+
+                if has_incomplete:
+                    LOGGER.warning(
+                        "Missing inspection data detected during classification. "
+                        "defect_type=%s number_of_inspections=%s",
+                        defect_code,
+                        len(group),
+                    )
+
+                if len(distinct_weeks) >= 4 and len(distinct_lots) == 1:
+                    LOGGER.warning(
+                        "Suspicious defect pattern detected. defect_type=%s "
+                        "number_of_inspections=%s number_of_defects_detected=%s",
+                        defect_code,
+                        len(group),
+                        number_of_defects_detected,
+                    )
+
+                if has_incomplete:
+                    status = DefectStatus.INSUFFICIENT_DATA
+                elif len(distinct_weeks) > 1 and len(distinct_lots) > 1:
+                    status = DefectStatus.RECURRING
+                else:
+                    status = DefectStatus.NOT_RECURRING
+
+                rows.append(
+                    RecurringDefectRow(
+                        defect_code=defect_code,
+                        status=status,
+                        num_weeks=len(distinct_weeks),
+                        num_lots=len(distinct_lots),
+                        first_seen=min(r.inspection_date for r in meaningful),
+                        last_seen=max(r.inspection_date for r in meaningful),
+                        total_qty=number_of_defects_detected,
+                    )
+                )
+
+            status_order = {
+                DefectStatus.RECURRING: 0,
+                DefectStatus.NOT_RECURRING: 1,
+                DefectStatus.INSUFFICIENT_DATA: 2,
+            }
+            rows.sort(key=lambda r: (status_order[r.status], -r.num_weeks, -r.num_lots))
+
+            recurring_count = sum(
+                1 for row in rows if row.status == DefectStatus.RECURRING
+            )
+            LOGGER.info(
+                "Recurring defect analysis complete. number_of_defects_detected=%s "
+                "number_of_summary_rows=%s",
+                recurring_count,
+                len(rows),
+            )
+            return rows
+        except (TypeError, ValueError):
+            LOGGER.exception(
+                "Data parsing error during recurring defect analysis. "
+                "start_date=%s end_date=%s",
+                start_date,
+                end_date,
+            )
+            raise
+        except Exception:
+            LOGGER.exception(
+                "Unexpected exception during recurring defect analysis. "
+                "start_date=%s end_date=%s",
+                start_date,
+                end_date,
+            )
+            raise
+
     def get_defect_detail(
         self, defect_code: str, start_date: date, end_date: date
     ) -> tuple[list[WeeklyBreakdownRow], list[InspectionDetail]]:
-        """Build the drill-down view for a single defect code (AC7).
+        """Build weekly breakdown and underlying inspection details for one defect."""
+        LOGGER.info(
+            "Defect drill-down started. defect_type=%s start_date=%s end_date=%s",
+            defect_code,
+            start_date,
+            end_date,
+        )
+        try:
+            records = self._repository.get_records_by_defect_code(
+                defect_code, start_date, end_date
+            )
+            LOGGER.info(
+                "Defect drill-down records loaded. defect_type=%s "
+                "number_of_inspections=%s",
+                defect_code,
+                len(records),
+            )
 
-        Returns two collections:
-            1. A weekly breakdown — one row per calendar week showing which
-               lots were involved and the total qty that week.
-            2. The underlying raw inspection records.
+            inspection_details = [
+                InspectionDetail(
+                    lot_id=r.lot.lot_id,
+                    inspection_date=r.inspection_date,
+                    defect_code=r.defect.defect_code,
+                    qty_defects=r.qty_defects,
+                )
+                for r in records
+            ]
 
-        Args:
-            defect_code: The defect to drill into (e.g., 'DEF-001').
-            start_date:  Start of the date range (inclusive).
-            end_date:    End of the date range (inclusive).
+            meaningful = [r for r in records if r.qty_defects > 0]
+            weeks: dict[tuple[int, int], list] = defaultdict(list)
+            for r in meaningful:
+                iso = r.inspection_date.isocalendar()
+                weeks[(iso[0], iso[1])].append(r)
 
-        Returns:
-            A tuple of (weekly_rows, inspection_details).
-        """
-        # TODO: implement
-        return ([], [])
+            weekly_rows = []
+            for (iso_year, iso_week), week_records in sorted(weeks.items()):
+                week_start = date.fromisocalendar(iso_year, iso_week, 1)
+                week_end = week_start + timedelta(days=6)
+                lots_involved = sorted({r.lot.lot_id for r in week_records})
+                total_qty = sum(r.qty_defects for r in week_records)
+                weekly_rows.append(
+                    WeeklyBreakdownRow(
+                        week_start=week_start,
+                        week_end=week_end,
+                        lots_involved=lots_involved,
+                        total_qty=total_qty,
+                    )
+                )
 
-    # ------------------------------------------------------------------
-    # AC8 — Identify missing data periods
-    # ------------------------------------------------------------------
+            LOGGER.info(
+                "Defect drill-down complete. defect_type=%s number_of_inspections=%s "
+                "number_of_defects_detected=%s",
+                defect_code,
+                len(inspection_details),
+                sum(detail.qty_defects for detail in inspection_details),
+            )
+            return (weekly_rows, inspection_details)
+        except (TypeError, ValueError):
+            LOGGER.exception(
+                "Data parsing error during defect drill-down. defect_type=%s "
+                "start_date=%s end_date=%s",
+                defect_code,
+                start_date,
+                end_date,
+            )
+            raise
+        except Exception:
+            LOGGER.exception(
+                "Unexpected exception during defect drill-down. defect_type=%s "
+                "start_date=%s end_date=%s",
+                defect_code,
+                start_date,
+                end_date,
+            )
+            raise
+
     def get_missing_periods(
         self, defect_code: str, start_date: date, end_date: date
     ) -> list[MissingPeriod]:
-        """Identify time periods with incomplete data for a defect (AC8).
+        """Identify missing/incomplete data periods for one defect."""
+        LOGGER.info(
+            "Missing-period analysis started. defect_type=%s start_date=%s end_date=%s",
+            defect_code,
+            start_date,
+            end_date,
+        )
+        try:
+            records = self._repository.get_records_by_defect_code(
+                defect_code, start_date, end_date
+            )
 
-        When a defect is classified as "Insufficient data" (AC4), this method
-        explains *which* weeks are missing and why.
+            incomplete = [r for r in records if not r.is_data_complete]
+            if not incomplete:
+                return []
 
-        Args:
-            defect_code: The defect to check.
-            start_date:  Start of the date range (inclusive).
-            end_date:    End of the date range (inclusive).
+            LOGGER.warning(
+                "Missing inspection data found. defect_type=%s number_of_inspections=%s",
+                defect_code,
+                len(incomplete),
+            )
 
-        Returns:
-            A list of ``MissingPeriod`` DTOs describing each gap.  Returns an
-            empty list if data is complete.
-        """
-        # TODO: implement
-        return []
+            weeks: dict[tuple[int, int], list] = defaultdict(list)
+            for r in incomplete:
+                iso = r.inspection_date.isocalendar()
+                weeks[(iso[0], iso[1])].append(r)
+
+            missing_periods = []
+            for iso_year, iso_week in sorted(weeks.keys()):
+                period_start = date.fromisocalendar(iso_year, iso_week, 1)
+                period_end = period_start + timedelta(days=6)
+                reason = (
+                    f"Missing inspection records for week of "
+                    f"{period_start.isoformat()} to {period_end.isoformat()}"
+                )
+                missing_periods.append(
+                    MissingPeriod(
+                        period_start=period_start,
+                        period_end=period_end,
+                        reason=reason,
+                    )
+                )
+
+            if len(missing_periods) > 1:
+                merged = [missing_periods[0]]
+                for mp in missing_periods[1:]:
+                    prev = merged[-1]
+                    if mp.period_start <= prev.period_end + timedelta(days=1):
+                        merged[-1] = MissingPeriod(
+                            period_start=prev.period_start,
+                            period_end=mp.period_end,
+                            reason=(
+                                f"Missing inspection records for weeks of "
+                                f"{prev.period_start.isoformat()} to {mp.period_end.isoformat()}"
+                            ),
+                        )
+                    else:
+                        merged.append(mp)
+                missing_periods = merged
+
+            LOGGER.info(
+                "Missing-period analysis complete. defect_type=%s number_of_periods=%s",
+                defect_code,
+                len(missing_periods),
+            )
+            return missing_periods
+        except (TypeError, ValueError):
+            LOGGER.exception(
+                "Data parsing error during missing-period analysis. defect_type=%s "
+                "start_date=%s end_date=%s",
+                defect_code,
+                start_date,
+                end_date,
+            )
+            raise
+        except Exception:
+            LOGGER.exception(
+                "Unexpected exception during missing-period analysis. defect_type=%s "
+                "start_date=%s end_date=%s",
+                defect_code,
+                start_date,
+                end_date,
+            )
+            raise

@@ -32,16 +32,23 @@ psycopg2-binary = "^2.9"
 streamlit = "^1.40"
 ruff = "^0.15.2"
 pre-commit = "^4.5.1"
+python-dotenv = "^1.2.2"
+pytest-playwright = "^0.7.2"
 
 [tool.poetry.group.dev.dependencies]
 
 # pytest — the testing framework. Run tests with:  poetry run pytest
 pytest = "^8.0"
 pip-licenses = "^5.5.1"
+playwright = "^1.58.0"
 
 [tool.pytest.ini_options]
 # Tell pytest where to find our tests
 testpaths = ["tests"]
+markers = [
+    "e2e: end-to-end browser tests (require running database)",
+    "integration: integration tests for repository/service with a real database",
+]
 
 [build-system]
 requires = ["poetry-core"]
