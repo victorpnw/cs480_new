@@ -26,6 +26,7 @@ Acceptance Criteria covered here:
 import os
 import sys
 import logging
+import sentry_sdk
 from datetime import date, timedelta
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -237,6 +238,14 @@ def main():
     LOGGER.info("User opened Recurring Defects page.")
 
     load_dotenv()
+
+    # Configure sentry
+    sentry_sdk.init(
+        dsn=os.getenv("SENTRY_DSN"),
+        send_default_pii=False,
+        traces_sample_rate=0.0,
+        enable_logs=False,
+    )
 
     st.set_page_config(page_title="Recurring Defects", layout="wide")
     st.title("Recurring Defects Analysis")
