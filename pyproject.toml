@@ -35,6 +35,8 @@ pre-commit = "^4.5.1"
 python-dotenv = "^1.2.2"
 pytest-playwright = "^0.7.2"
 sentry-sdk = "^2.54.0"
+load-dotenv = "^0.1.0"
+dotenv = "^0.9.9"
 
 [tool.poetry.group.dev.dependencies]
 
