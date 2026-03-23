@@ -249,6 +249,7 @@ def main():
 
     st.set_page_config(page_title="Recurring Defects", layout="wide")
     st.title("Recurring Defects Analysis")
+    st.title("CD Test")
 
     # 1. Date range selector
     start_date, end_date = render_date_range_selector()
