@@ -27,18 +27,31 @@ def database_url() -> str | None:
     """Resolve the database URL once per test session.
 
     Steps:
-        1. Load project `.env` so local developers can run tests easily.
-        2. Read `DATABASE_URL` from environment variables.
-        3. If missing, skip integration tests with a clear reason.
+        1. Load project `.env.test` for test-specific configuration.
+        2. Read `DATABASE_URL_TEST` from environment variables.
+        3. If missing, fall back to `.env` and `DATABASE_URL`.
+        4. If still missing, skip integration tests with a clear reason.
 
     Why `scope="session"`:
         This value does not change between tests, so loading it once is faster.
     """
     project_root = Path(__file__).resolve().parents[2]
+
+    # First try to load .env.test for test-specific configuration
+    test_env_path = project_root / ".env.test"
+    if test_env_path.exists():
+        load_dotenv(dotenv_path=test_env_path)
+        database_url = os.getenv("DATABASE_URL_TEST")
+        if database_url:
+            return database_url
+
+    # Fall back to .env if .env.test doesn't exist or DATABASE_URL_TEST is not set
     load_dotenv(dotenv_path=project_root / ".env")
     database_url = os.getenv("DATABASE_URL")
     if not database_url:
-        pytest.skip("DATABASE_URL is not set; skipping integration tests.")
+        pytest.skip(
+            "Neither DATABASE_URL_TEST nor DATABASE_URL is set; skipping integration tests."
+        )
     return database_url
 
 

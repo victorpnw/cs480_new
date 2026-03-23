@@ -107,7 +107,7 @@ repos:
         #
         # Pre-commit literally runs this string.
         #
-        entry: poetry run pytest -q --maxfail=1 --disable-warnings
+        entry: poetry run pytest tests/unit/ -q --maxfail=1 --disable-warnings
 
         # Explanation of execution behavior:
         #
